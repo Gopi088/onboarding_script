@@ -1,0 +1,574 @@
+#!/usr/bin/env python3
+"""
+team-member
+============
+Microsoft 365 group tool — single file, built in layers:
+
+  LAYER 1 — GraphClient   : raw HTTP/auth calls to Microsoft Graph. Knows
+                             nothing about "groups" or "employees".
+  LAYER 2 — GroupService  : business logic (create group, list membership,
+                             add member, remove member). Built only on
+                             GraphClient, knows nothing about the command line.
+  LAYER 3 — CLI / main()  : argparse commands + logging setup. The only
+                             part that touches sys.argv or print().
+
+Each layer only calls into the one below it, so you could swap out the
+CLI for a web API later, or swap Graph for another provider, without
+touching the other layers.
+
+──────────────────────────────────────────────────────────────────────────────
+  USAGE  (works like any Linux command, e.g. find)
+──────────────────────────────────────────────────────────────────────────────
+  team-member create-group --name "Everyone"
+  team-member create-group --name "Hiring" --type unified --description "Hiring team DL"
+  team-member list --email jane.doe@yourcompany.com
+  team-member add --email jane.doe@yourcompany.com --group "Everyone"
+  team-member remove --email jane.doe@yourcompany.com --group "Everyone"
+  team-member list --email jane.doe@yourcompany.com --verbose --log-level DEBUG
+
+  NOTE: "remove" only removes the employee's MEMBERSHIP. The group itself
+  is never deleted, no matter what.
+
+──────────────────────────────────────────────────────────────────────────────
+  SETUP
+──────────────────────────────────────────────────────────────────────────────
+  1) pip install msal requests python-dotenv
+  2) Azure AD App Registration needs these APPLICATION permissions,
+     with admin consent granted:
+        User.Read.All
+        Group.ReadWrite.All
+        GroupMember.ReadWrite.All
+  3) .env file (or exported vars) in the folder you run this from:
+        MS_TENANT_ID=...
+        MS_CLIENT_ID=...
+        MS_CLIENT_SECRET=...
+  4) Make it a real command:
+        chmod +x team-member
+        sudo cp team-member /usr/local/bin/team-member
+     Then run it from anywhere, e.g.:
+        team-member list --email jane.doe@yourcompany.com
+"""
+
+import os
+import sys
+import time
+import logging
+import argparse
+import requests
+import msal
+from dotenv import load_dotenv, find_dotenv
+
+log = logging.getLogger("team-member")
+
+GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+
+class GroupAlreadyExists(Exception):
+    """Raised by create_group() when a group with that name already exists."""
+    def __init__(self, name: str, existing_id: str):
+        self.name = name
+        self.existing_id = existing_id
+        super().__init__(f"A group named '{name}' already exists (id: {existing_id})")
+
+
+# ==============================================================================
+# LAYER 1 — GraphClient: raw Microsoft Graph transport (auth + HTTP only)
+# ==============================================================================
+
+class GraphClient:
+    def __init__(self):
+        self.tenant_id = self._require_env("MS_TENANT_ID")
+        self.client_id = self._require_env("MS_CLIENT_ID")
+        self.client_secret = self._require_env("MS_CLIENT_SECRET")
+        self._token = None
+        self._token_expires_at = 0
+
+    @staticmethod
+    def _require_env(name: str) -> str:
+        value = os.environ.get(name, "").strip()
+        if not value:
+            raise RuntimeError(
+                f"Environment variable '{name}' is not set. "
+                f"Make sure a .env file with '{name}=...' exists in the folder "
+                f"you are running this command from (run 'pwd' to check), or "
+                f"export it in your terminal directly."
+            )
+        return value
+
+    def _get_token(self) -> str:
+        now = time.time()
+        if self._token and self._token_expires_at > now + 60:
+            return self._token
+
+        log.debug("Acquiring new Graph access token")
+        app = msal.ConfidentialClientApplication(
+            self.client_id,
+            authority=f"https://login.microsoftonline.com/{self.tenant_id}",
+            client_credential=self.client_secret,
+        )
+        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+        if "access_token" not in result:
+            err = result.get("error_description") or result.get("error") or str(result)
+            raise RuntimeError(f"Failed to authenticate with Microsoft Graph: {err}")
+
+        self._token = result["access_token"]
+        self._token_expires_at = now + result.get("expires_in", 3600)
+        log.info("Authenticated with Microsoft Graph")
+        return self._token
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._get_token()}", "Content-Type": "application/json"}
+
+    def get(self, path: str, params: dict = None) -> dict:
+        url = f"{GRAPH_BASE}{path}"
+        log.debug("GET %s params=%s", path, params)
+        resp = requests.get(url, headers=self._headers(), params=params, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_paged(self, path: str) -> list:
+        """Follows @odata.nextLink automatically. Returns a flat list of all items."""
+        items = []
+        url = f"{GRAPH_BASE}{path}"
+        while url:
+            log.debug("GET (paged) %s", url)
+            resp = requests.get(url, headers=self._headers(), timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            items.extend(data.get("value", []))
+            url = data.get("@odata.nextLink")
+        return items
+
+    def post(self, path: str, payload: dict) -> dict:
+        url = f"{GRAPH_BASE}{path}"
+        log.debug("POST %s payload=%s", path, payload)
+        resp = requests.post(url, headers=self._headers(), json=payload, timeout=30)
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    def delete(self, path: str) -> None:
+        url = f"{GRAPH_BASE}{path}"
+        log.debug("DELETE %s", path)
+        resp = requests.delete(url, headers=self._headers(), timeout=30)
+        resp.raise_for_status()
+
+    @staticmethod
+    def error_message(exc: requests.HTTPError) -> str:
+        try:
+            body = exc.response.json()
+            return body.get("error", {}).get("message", exc.response.text[:200])
+        except Exception:
+            return exc.response.text[:200]
+
+
+# ==============================================================================
+# LAYER 2 — GroupService: business logic, built only on GraphClient
+# ==============================================================================
+
+class GroupService:
+    def __init__(self, graph: GraphClient):
+        self.graph = graph
+
+    # ── Users ────────────────────────────────────────────────────────────
+
+    def resolve_user(self, email: str) -> dict | None:
+        """Look up a user by email/UPN. Returns None if not found in this tenant."""
+        try:
+            return self.graph.get(
+                f"/users/{email}",
+                params={"$select": "id,displayName,mail,userPrincipalName"},
+            )
+        except requests.HTTPError as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise
+
+    # ── Groups ───────────────────────────────────────────────────────────
+
+    def create_group(self, name: str, group_type: str = "security", description: str = "",
+                      allow_duplicate: bool = False) -> dict:
+        """
+        Creates a real group in Azure AD / Microsoft 365.
+        group_type: "security" (plain security group) or "unified" (Microsoft 365 group).
+        Refuses to create a second group with the same name unless
+        allow_duplicate=True — Azure AD itself allows duplicate names,
+        which silently causes confusing membership results later.
+        """
+        if not allow_duplicate:
+            existing = self.find_group_by_name(name)
+            if existing:
+                raise GroupAlreadyExists(name, existing["id"])
+
+        mail_nickname = "".join(ch for ch in name if ch.isalnum()) or "group"
+        payload = {
+            "displayName": name,
+            "mailEnabled": group_type == "unified",
+            "mailNickname": mail_nickname,
+            "securityEnabled": True,
+            "description": description or None,
+        }
+        if group_type == "unified":
+            payload["groupTypes"] = ["Unified"]
+
+        log.info("Creating group '%s' (type=%s)", name, group_type)
+        group = self.graph.post("/groups", payload)
+        log.info("Created group '%s' with id %s", name, group.get("id"))
+        return group
+
+    def list_all_groups(self) -> list[dict]:
+        """Returns every group in the tenant: [{id, displayName}, ...]."""
+        groups = self.graph.get_paged("/groups?$select=id,displayName")
+        return sorted(groups, key=lambda g: (g.get("displayName") or "").lower())
+
+    def find_group_by_name(self, name: str) -> dict | None:
+        """
+        Case-insensitive exact match on displayName. Returns None if no
+        group with that name exists (caller should show the user the
+        full group list so they can pick a valid name).
+        """
+        target = name.strip().lower()
+        for group in self.list_all_groups():
+            if (group.get("displayName") or "").strip().lower() == target:
+                return group
+        return None
+
+    def get_user_group_ids(self, user_id: str) -> set:
+        """
+        Fetches every group id this user belongs to, ONE call (paged).
+        Used by add/remove to check current membership before acting.
+        """
+        items = self.graph.get_paged(f"/users/{user_id}/memberOf?$select=id")
+        return {item["id"] for item in items if "id" in item}
+
+    def list_user_groups(self, user_id: str) -> list[dict]:
+        """
+        Returns only the groups this user actually belongs to — [{id, displayName}, ...].
+        This is ONE call regardless of how many groups exist in the tenant
+        (it asks "what is this user in?", not "check this user against
+        every group" — so it stays fast even with hundreds of groups).
+        """
+        items = self.graph.get_paged(f"/users/{user_id}/memberOf?$select=id,displayName")
+        groups = [{"id": i["id"], "displayName": i.get("displayName")} for i in items if "id" in i]
+        return sorted(groups, key=lambda g: (g["displayName"] or "").lower())
+
+    # ── Membership changes ──────────────────────────────────────────────
+
+    # Microsoft Graph has a short eventual-consistency delay after a
+    # membership change before that change is visible to every endpoint.
+    # Acting on the same membership again seconds later (e.g. add then
+    # immediately remove) can hit a transient "does not exist" error that
+    # has nothing to do with a real problem — it just needs a moment.
+    _TRANSIENT_RETRY_ATTEMPTS = 4
+    _TRANSIENT_RETRY_DELAY_SECONDS = 3
+    _TRANSIENT_ERROR_HINT = "does not exist or one of its queried reference-property"
+
+    def _retry_on_transient_error(self, action_desc: str, fn):
+        last_exc = None
+        for attempt in range(1, self._TRANSIENT_RETRY_ATTEMPTS + 1):
+            try:
+                return fn()
+            except requests.HTTPError as exc:
+                msg = GraphClient.error_message(exc)
+                last_exc = exc
+                if self._TRANSIENT_ERROR_HINT not in msg or attempt == self._TRANSIENT_RETRY_ATTEMPTS:
+                    raise
+                log.warning(
+                    "%s: transient Graph delay (attempt %d/%d), retrying in %ds...",
+                    action_desc, attempt, self._TRANSIENT_RETRY_ATTEMPTS, self._TRANSIENT_RETRY_DELAY_SECONDS,
+                )
+                time.sleep(self._TRANSIENT_RETRY_DELAY_SECONDS)
+        raise last_exc
+
+    def add_member(self, user_id: str, group_id: str) -> None:
+        """Adds the user to the group's membership. Does not touch the group itself."""
+        log.info("Adding user %s to group %s", user_id, group_id)
+
+        def _do():
+            self.graph.post(
+                f"/groups/{group_id}/members/$ref",
+                {"@odata.id": f"{GRAPH_BASE}/directoryObjects/{user_id}"},
+            )
+
+        self._retry_on_transient_error(f"add {user_id} to {group_id}", _do)
+        log.info("Added successfully")
+
+    def remove_member(self, user_id: str, group_id: str) -> None:
+        """
+        Removes the user's MEMBERSHIP from the group only.
+        The group itself is never deleted, no matter what.
+        """
+        log.info("Removing user %s from group %s (membership only)", user_id, group_id)
+
+        def _do():
+            self.graph.delete(f"/groups/{group_id}/members/{user_id}/$ref")
+
+        self._retry_on_transient_error(f"remove {user_id} from {group_id}", _do)
+        log.info("Removed successfully — group was not deleted")
+
+
+# ==============================================================================
+# LAYER 3 — CLI: argparse commands, logging setup. The only layer that
+# touches sys.argv, print(), or the log/console formatting.
+# ==============================================================================
+
+class _ColorFormatter(logging.Formatter):
+    """Color-codes log level in the terminal only. The file log stays plain text."""
+    _COLORS = {
+        "DEBUG": "\033[90m",     # gray
+        "INFO": "\033[96m",      # cyan
+        "WARNING": "\033[93m",   # yellow
+        "ERROR": "\033[91m",     # red
+        "CRITICAL": "\033[91m",  # red
+    }
+    _RESET = "\033[0m"
+
+    def format(self, record):
+        base = super().format(record)
+        color = self._COLORS.get(record.levelname, "")
+        return f"{color}{base}{self._RESET}" if color else base
+
+
+def setup_logging(console_level: str, verbose: bool) -> None:
+    """
+    Full detail ALWAYS goes to team-member.log, no matter what (plain text,
+    easy to grep or open in an editor).
+    The terminal stays clean by default — only the command's own print()
+    output shows. Pass --verbose to also print logs to the terminal,
+    color-coded by level, at whatever level --log-level requests.
+    """
+    plain_formatter = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    file_handler = logging.FileHandler("team-member.log")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(plain_formatter)
+    root.addHandler(file_handler)
+
+    if verbose:
+        color_formatter = _ColorFormatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(getattr(logging, console_level.upper(), logging.INFO))
+        console_handler.setFormatter(color_formatter)
+        root.addHandler(console_handler)
+
+    if not (verbose and console_level.upper() == "DEBUG"):
+        logging.getLogger("msal").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+def _print_group_list_hint(service: GroupService) -> None:
+    """Shown whenever a --group name doesn't match, so the person can pick a real one."""
+    groups = service.list_all_groups()
+    if not groups:
+        print("No groups exist in this tenant yet. Create one with: team-member create-group --name <name>")
+        return
+    print("Available groups:")
+    for g in groups:
+        print(f"  - {g.get('displayName')}")
+
+
+def cmd_create_group(service: GroupService, args) -> int:
+    try:
+        group = service.create_group(
+            name=args.name, group_type=args.type, description=args.description or "",
+            allow_duplicate=args.force,
+        )
+    except GroupAlreadyExists as exc:
+        log.error(str(exc))
+        print(f"Error: {exc}. Use 'team-member list --email <email>' to see it, "
+              f"or pass --force to create a duplicate on purpose.", file=sys.stderr)
+        return 1
+    except requests.HTTPError as exc:
+        msg = GraphClient.error_message(exc)
+        log.error("Failed to create group '%s': %s", args.name, msg)
+        print(f"Error: could not create group '{args.name}' — {msg}", file=sys.stderr)
+        return 1
+    print(f"Created group: {group.get('displayName')}  (id: {group.get('id')})")
+    return 0
+
+
+def cmd_list(service: GroupService, args) -> int:
+    user = service.resolve_user(args.email)
+    if not user:
+        log.error("No user found in this tenant for email '%s'", args.email)
+        print(f"Error: no user found in this tenant for '{args.email}'", file=sys.stderr)
+        return 1
+
+    log.info("Listing groups %s is a member of", user.get("displayName") or args.email)
+    try:
+        rows = service.list_user_groups(user["id"])
+    except requests.HTTPError as exc:
+        msg = GraphClient.error_message(exc)
+        log.error("Could not fetch group memberships for '%s': %s", args.email, msg)
+        print(f"Error: could not fetch group memberships — {msg}", file=sys.stderr)
+        return 1
+
+    display_name = user.get("displayName") or args.email
+    if not rows:
+        print(f"{display_name} is not a member of any group.")
+        return 0
+
+    name_width = max(len(r["displayName"] or "") for r in rows) + 2
+    print(f"\nGroups {display_name} is a member of ({len(rows)}):\n")
+    print(f"{'GROUP':<{name_width}}")
+    print("-" * name_width)
+    for r in rows:
+        print(f"{(r['displayName'] or '(unnamed)'):<{name_width}}")
+    print()
+    return 0
+
+
+def cmd_add(service: GroupService, args) -> int:
+    user = service.resolve_user(args.email)
+    if not user:
+        log.error("No user found in this tenant for email '%s'", args.email)
+        print(f"Error: no user found in this tenant for '{args.email}'", file=sys.stderr)
+        return 1
+
+    group = service.find_group_by_name(args.group)
+    if not group:
+        log.error("No group named '%s' found", args.group)
+        print(f"Error: no group named '{args.group}' found.", file=sys.stderr)
+        _print_group_list_hint(service)
+        return 1
+
+    if group["id"] in service.get_user_group_ids(user["id"]):
+        print(f"{user.get('displayName') or args.email} is already a member of '{group['displayName']}' — nothing to do.")
+        return 0
+
+    try:
+        service.add_member(user["id"], group["id"])
+    except requests.HTTPError as exc:
+        msg = GraphClient.error_message(exc)
+        log.error("Failed to add %s to '%s': %s", args.email, args.group, msg)
+        print(f"Error: could not add {args.email} to '{args.group}' — {msg}", file=sys.stderr)
+        return 1
+
+    print(f"Added {user.get('displayName') or args.email} to '{group['displayName']}'.")
+    return 0
+
+
+def cmd_remove(service: GroupService, args) -> int:
+    user = service.resolve_user(args.email)
+    if not user:
+        log.error("No user found in this tenant for email '%s'", args.email)
+        print(f"Error: no user found in this tenant for '{args.email}'", file=sys.stderr)
+        return 1
+
+    group = service.find_group_by_name(args.group)
+    if not group:
+        log.error("No group named '%s' found", args.group)
+        print(f"Error: no group named '{args.group}' found.", file=sys.stderr)
+        _print_group_list_hint(service)
+        return 1
+
+    if group["id"] not in service.get_user_group_ids(user["id"]):
+        print(f"{user.get('displayName') or args.email} is not currently a member of '{group['displayName']}' — nothing to do.")
+        return 0
+
+    try:
+        service.remove_member(user["id"], group["id"])
+    except requests.HTTPError as exc:
+        msg = GraphClient.error_message(exc)
+        log.error("Failed to remove %s from '%s': %s", args.email, args.group, msg)
+        print(f"Error: could not remove {args.email} from '{args.group}' — {msg}", file=sys.stderr)
+        return 1
+
+    print(f"Removed {user.get('displayName') or args.email} from '{group['displayName']}'. "
+          f"(Membership only — the group itself was not deleted.)")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="team-member",
+        description="Microsoft 365 group tool: create groups, list/add/remove an employee's membership.",
+    )
+    parser.add_argument(
+        "--log-level", default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Verbosity of logs shown on screen when --verbose is used (default: INFO). "
+             "Full detail always goes to team-member.log regardless of this setting.",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="Also print logs to the terminal (off by default — terminal stays clean, "
+             "full detail is still always written to team-member.log).",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    p_create = subparsers.add_parser("create-group", help="Create a new Microsoft 365 / security group")
+    p_create.add_argument("--name", required=True, help="Display name for the group, e.g. 'Everyone'")
+    p_create.add_argument("--type", choices=["security", "unified"], default="security",
+                           help="'security' = plain security group, 'unified' = Microsoft 365 group (default: security)")
+    p_create.add_argument("--description", default="", help="Optional description")
+    p_create.add_argument("--force", action="store_true",
+                           help="Allow creating a duplicate if a group with this name already exists "
+                                "(off by default, to prevent accidental duplicate groups)")
+
+    p_list = subparsers.add_parser("list", help="List every group and whether the given employee is a member")
+    p_list.add_argument("--email", required=True, help="Employee's email / userPrincipalName")
+
+    p_add = subparsers.add_parser("add", help="Add an employee to a group (membership only)")
+    p_add.add_argument("--email", required=True, help="Employee's email / userPrincipalName")
+    p_add.add_argument("--group", required=True, help="Exact group name, e.g. 'Everyone' (see 'list' for names)")
+
+    p_remove = subparsers.add_parser(
+        "remove", help="Remove an employee's membership from a group (the group itself is never deleted)"
+    )
+    p_remove.add_argument("--email", required=True, help="Employee's email / userPrincipalName")
+    p_remove.add_argument("--group", required=True, help="Exact group name, e.g. 'Everyone' (see 'list' for names)")
+
+    return parser
+
+
+def main() -> int:
+    # usecwd=True: look for .env in the folder you RUN this from, not the
+    # folder this script happens to be installed in (matters once it's
+    # copied to /usr/local/bin).
+    load_dotenv(find_dotenv(usecwd=True))
+    args = build_parser().parse_args()
+    setup_logging(args.log_level, args.verbose)
+
+    try:
+        graph = GraphClient()
+        service = GroupService(graph)
+    except RuntimeError as exc:
+        log.error(str(exc))
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.command == "create-group":
+        return cmd_create_group(service, args)
+    if args.command == "list":
+        return cmd_list(service, args)
+    if args.command == "add":
+        return cmd_add(service, args)
+    if args.command == "remove":
+        return cmd_remove(service, args)
+
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(130)
+    except requests.HTTPError as exc:
+        msg = GraphClient.error_message(exc)
+        log.error("Microsoft Graph request failed: %s", msg)
+        print(f"Error: Microsoft Graph request failed — {msg}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        log.error("Unexpected error: %s", exc)
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)

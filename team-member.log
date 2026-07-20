@@ -1,0 +1,144 @@
+2026-07-20 04:25:30 [INFO] team-member: Creating group 'Everyone' (type=security)
+2026-07-20 04:25:30 [DEBUG] team-member: POST /groups payload={'displayName': 'Everyone', 'mailEnabled': False, 'mailNickname': 'Everyone', 'securityEnabled': True, 'description': None}
+2026-07-20 04:25:30 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:25:31 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:25:31 [INFO] team-member: Created group 'Everyone' with id 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5
+2026-07-20 04:25:52 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:25:52 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:25:53 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:25:53 [INFO] team-member: Listing group membership for test
+2026-07-20 04:25:53 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:25:53 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:26:10 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:26:10 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:26:10 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:26:11 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:26:11 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:26:11 [INFO] team-member: Adding user b9663dad-86ac-488b-851f-57759339e8e3 to group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5
+2026-07-20 04:26:11 [DEBUG] team-member: POST /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/$ref payload={'@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/b9663dad-86ac-488b-851f-57759339e8e3'}
+2026-07-20 04:26:12 [INFO] team-member: Added successfully
+2026-07-20 04:26:23 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:26:23 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:26:24 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:26:24 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:26:25 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:26:25 [INFO] team-member: Removing user b9663dad-86ac-488b-851f-57759339e8e3 from group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5 (membership only)
+2026-07-20 04:26:25 [DEBUG] team-member: DELETE /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/b9663dad-86ac-488b-851f-57759339e8e3/$ref
+2026-07-20 04:26:25 [INFO] team-member: Removed successfully — group was not deleted
+2026-07-20 04:28:34 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:28:34 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:28:34 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:28:35 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:28:35 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:28:35 [INFO] team-member: Adding user b9663dad-86ac-488b-851f-57759339e8e3 to group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5
+2026-07-20 04:28:35 [DEBUG] team-member: POST /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/$ref payload={'@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/b9663dad-86ac-488b-851f-57759339e8e3'}
+2026-07-20 04:28:35 [INFO] team-member: Added successfully
+2026-07-20 04:28:42 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:28:42 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:28:43 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:28:43 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:28:43 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:28:43 [INFO] team-member: Removing user b9663dad-86ac-488b-851f-57759339e8e3 from group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5 (membership only)
+2026-07-20 04:28:43 [DEBUG] team-member: DELETE /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/b9663dad-86ac-488b-851f-57759339e8e3/$ref
+2026-07-20 04:28:44 [ERROR] team-member: Failed to remove test@gopalgadher0koutlook.onmicrosoft.com from 'Everyone': Resource '53c02e6b-9b9f-4620-afbc-a2fe79e14fb5' does not exist or one of its queried reference-property objects are not present.
+2026-07-20 04:29:01 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:29:01 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:29:01 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:29:01 [INFO] team-member: Listing group membership for test
+2026-07-20 04:29:01 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:29:02 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:34:09 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:34:09 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:34:09 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:34:10 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:34:10 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:34:21 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:34:21 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:34:22 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:34:22 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:34:22 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:34:23 [INFO] team-member: Removing user b9663dad-86ac-488b-851f-57759339e8e3 from group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5 (membership only)
+2026-07-20 04:34:23 [DEBUG] team-member: DELETE /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/b9663dad-86ac-488b-851f-57759339e8e3/$ref
+2026-07-20 04:34:23 [INFO] team-member: Removed successfully — group was not deleted
+2026-07-20 04:34:32 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:34:32 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:34:33 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:34:33 [INFO] team-member: Listing group membership for test
+2026-07-20 04:34:33 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:34:33 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:35:58 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:35:58 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:35:58 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:35:59 [INFO] team-member: Listing group membership for test
+2026-07-20 04:35:59 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:35:59 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:42:17 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:42:17 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:42:18 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:42:18 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:42:18 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:42:19 [INFO] team-member: Adding user b9663dad-86ac-488b-851f-57759339e8e3 to group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5
+2026-07-20 04:42:19 [DEBUG] team-member: POST /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/$ref payload={'@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/b9663dad-86ac-488b-851f-57759339e8e3'}
+2026-07-20 04:42:19 [INFO] team-member: Added successfully
+2026-07-20 04:42:29 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:42:29 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:42:30 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:42:30 [INFO] team-member: Listing groups test is a member of
+2026-07-20 04:42:30 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id,displayName
+2026-07-20 04:52:28 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:52:28 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:52:29 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:52:29 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:52:29 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:52:30 [INFO] team-member: Adding user b9663dad-86ac-488b-851f-57759339e8e3 to group dd73bdd4-88b7-4f71-ae8f-0246e4f20bd5
+2026-07-20 04:52:30 [DEBUG] team-member: POST /groups/dd73bdd4-88b7-4f71-ae8f-0246e4f20bd5/members/$ref payload={'@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/b9663dad-86ac-488b-851f-57759339e8e3'}
+2026-07-20 04:52:30 [INFO] team-member: Added successfully
+2026-07-20 04:52:33 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:52:33 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:52:33 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:52:34 [INFO] team-member: Listing groups test is a member of
+2026-07-20 04:52:34 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id,displayName
+2026-07-20 04:53:10 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:53:10 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:53:11 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:53:11 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:53:11 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:53:12 [INFO] team-member: Adding user b9663dad-86ac-488b-851f-57759339e8e3 to group dd0e4e6b-7db6-40d2-9713-f4113b1cee6c
+2026-07-20 04:53:12 [DEBUG] team-member: POST /groups/dd0e4e6b-7db6-40d2-9713-f4113b1cee6c/members/$ref payload={'@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/b9663dad-86ac-488b-851f-57759339e8e3'}
+2026-07-20 04:53:12 [INFO] team-member: Added successfully
+2026-07-20 04:53:18 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:53:18 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:53:19 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:53:19 [INFO] team-member: Listing groups test is a member of
+2026-07-20 04:53:19 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id,displayName
+2026-07-20 04:53:59 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:53:59 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:53:59 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:54:00 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:54:00 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:54:00 [INFO] team-member: Adding user b9663dad-86ac-488b-851f-57759339e8e3 to group 19e2480c-127a-460a-818f-1a21e78ecc46
+2026-07-20 04:54:00 [DEBUG] team-member: POST /groups/19e2480c-127a-460a-818f-1a21e78ecc46/members/$ref payload={'@odata.id': 'https://graph.microsoft.com/v1.0/directoryObjects/b9663dad-86ac-488b-851f-57759339e8e3'}
+2026-07-20 04:54:01 [INFO] team-member: Added successfully
+2026-07-20 04:54:08 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:54:08 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:54:08 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:54:08 [INFO] team-member: Listing groups test is a member of
+2026-07-20 04:54:08 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id,displayName
+2026-07-20 04:54:47 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:54:47 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:54:48 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:54:48 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/groups?$select=id,displayName
+2026-07-20 04:54:48 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id
+2026-07-20 04:54:49 [INFO] team-member: Removing user b9663dad-86ac-488b-851f-57759339e8e3 from group 53c02e6b-9b9f-4620-afbc-a2fe79e14fb5 (membership only)
+2026-07-20 04:54:49 [DEBUG] team-member: DELETE /groups/53c02e6b-9b9f-4620-afbc-a2fe79e14fb5/members/b9663dad-86ac-488b-851f-57759339e8e3/$ref
+2026-07-20 04:54:49 [INFO] team-member: Removed successfully — group was not deleted
+2026-07-20 04:54:53 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:54:53 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:54:54 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:54:54 [INFO] team-member: Listing groups test is a member of
+2026-07-20 04:54:54 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id,displayName
+2026-07-20 04:55:05 [DEBUG] team-member: GET /users/test@gopalgadher0koutlook.onmicrosoft.com params={'$select': 'id,displayName,mail,userPrincipalName'}
+2026-07-20 04:55:05 [DEBUG] team-member: Acquiring new Graph access token
+2026-07-20 04:55:05 [INFO] team-member: Authenticated with Microsoft Graph
+2026-07-20 04:55:06 [INFO] team-member: Listing groups test is a member of
+2026-07-20 04:55:06 [DEBUG] team-member: GET (paged) https://graph.microsoft.com/v1.0/users/b9663dad-86ac-488b-851f-57759339e8e3/memberOf?$select=id,displayName

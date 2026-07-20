@@ -216,8 +216,8 @@ class GroupService:
         return group
 
     def list_all_groups(self) -> list[dict]:
-        """Returns every group in the tenant: [{id, displayName}, ...]."""
-        groups = self.graph.get_paged("/groups?$select=id,displayName")
+        """Returns every group in the tenant: [{id, displayName, mail}, ...]."""
+        groups = self.graph.get_paged("/groups?$select=id,displayName,mail")
         return sorted(groups, key=lambda g: (g.get("displayName") or "").lower())
 
     def find_group_by_name(self, name: str) -> dict | None:
@@ -235,21 +235,44 @@ class GroupService:
     def get_user_group_ids(self, user_id: str) -> set:
         """
         Fetches every group id this user belongs to, ONE call (paged).
+        Filters out non-group directory objects (e.g. directory roles).
         Used by add/remove to check current membership before acting.
         """
         items = self.graph.get_paged(f"/users/{user_id}/memberOf?$select=id")
-        return {item["id"] for item in items if "id" in item}
+        return {item["id"] for item in items if item.get("@odata.type") == "#microsoft.graph.group" and "id" in item}
 
     def list_user_groups(self, user_id: str) -> list[dict]:
         """
-        Returns only the groups this user actually belongs to — [{id, displayName}, ...].
-        This is ONE call regardless of how many groups exist in the tenant
-        (it asks "what is this user in?", not "check this user against
-        every group" — so it stays fast even with hundreds of groups).
+        Returns only the groups this user actually belongs to — [{id, displayName, mail}, ...].
+        Filters out non-group directory objects (e.g. directory roles) that the
+        /memberOf endpoint may return.  Adds a brief initial delay before the
+        first read to improve the chance Microsoft Graph's eventual-consistency
+        has propagated after a recent membership change.
         """
-        items = self.graph.get_paged(f"/users/{user_id}/memberOf?$select=id,displayName")
-        groups = [{"id": i["id"], "displayName": i.get("displayName")} for i in items if "id" in i]
-        return sorted(groups, key=lambda g: (g["displayName"] or "").lower())
+        GROUP_TYPE = "#microsoft.graph.group"
+
+        def do_fetch() -> list[dict]:
+            items = self.graph.get_paged(f"/users/{user_id}/memberOf?$select=id,displayName,mail")
+            groups = [
+                {"id": i["id"], "displayName": i.get("displayName"), "mail": i.get("mail")}
+                for i in items
+                if i.get("@odata.type") == GROUP_TYPE and "id" in i
+            ]
+            return sorted(groups, key=lambda g: (g["displayName"] or "").lower())
+
+        time.sleep(2)
+        base = do_fetch()
+        for attempt in range(5):
+            time.sleep(2)
+            refreshed = do_fetch()
+            if refreshed == base:
+                return refreshed
+            log.info(
+                "memberOf result changed between reads (attempt %d/5), re-reading...",
+                attempt + 1,
+            )
+            base = refreshed
+        return base
 
     # ── Membership changes ──────────────────────────────────────────────
 
@@ -261,6 +284,12 @@ class GroupService:
     _TRANSIENT_RETRY_ATTEMPTS = 4
     _TRANSIENT_RETRY_DELAY_SECONDS = 3
     _TRANSIENT_ERROR_HINT = "does not exist or one of its queried reference-property"
+
+    # After a successful membership change, poll memberOf until the change
+    # is reflected. This prevents stale data when the user immediately runs
+    # a list command after add/remove.
+    _CONFIRM_RETRY_ATTEMPTS = 15
+    _CONFIRM_RETRY_DELAY = 2.0
 
     def _retry_on_transient_error(self, action_desc: str, fn):
         last_exc = None
@@ -279,6 +308,31 @@ class GroupService:
                 time.sleep(self._TRANSIENT_RETRY_DELAY_SECONDS)
         raise last_exc
 
+    def _confirm_membership_change(self, user_id: str, group_id: str,
+                                    should_be_member: bool) -> None:
+        """
+        After a successful POST/DELETE, poll GET /users/{id}/memberOf until
+        the change is confirmed.  Microsoft Graph has an eventual-consistency
+        window where the write (add/remove) is committed but the read endpoint
+        still returns the old state.  Without this, running ``list`` right
+        after ``add``/``remove`` shows stale data.
+        """
+        for attempt in range(1, self._CONFIRM_RETRY_ATTEMPTS + 1):
+            current = self.get_user_group_ids(user_id)
+            if (group_id in current) == should_be_member:
+                return
+            if attempt < self._CONFIRM_RETRY_ATTEMPTS:
+                log.info(
+                    "Membership change not yet reflected, retrying (attempt %d/%d)...",
+                    attempt, self._CONFIRM_RETRY_ATTEMPTS,
+                )
+                time.sleep(self._CONFIRM_RETRY_DELAY)
+        raise RuntimeError(
+            f"Membership change for user {user_id} in group {group_id} "
+            f"not confirmed after {self._CONFIRM_RETRY_ATTEMPTS} attempts "
+            f"({self._CONFIRM_RETRY_ATTEMPTS * self._CONFIRM_RETRY_DELAY:.0f}s)"
+        )
+
     def add_member(self, user_id: str, group_id: str) -> None:
         """Adds the user to the group's membership. Does not touch the group itself."""
         log.info("Adding user %s to group %s", user_id, group_id)
@@ -290,6 +344,7 @@ class GroupService:
             )
 
         self._retry_on_transient_error(f"add {user_id} to {group_id}", _do)
+        self._confirm_membership_change(user_id, group_id, should_be_member=True)
         log.info("Added successfully")
 
     def remove_member(self, user_id: str, group_id: str) -> None:
@@ -303,6 +358,7 @@ class GroupService:
             self.graph.delete(f"/groups/{group_id}/members/{user_id}/$ref")
 
         self._retry_on_transient_error(f"remove {user_id} from {group_id}", _do)
+        self._confirm_membership_change(user_id, group_id, should_be_member=False)
         log.info("Removed successfully — group was not deleted")
 
 
@@ -410,17 +466,14 @@ def cmd_list(service: GroupService, args) -> int:
         print(f"Error: could not fetch group memberships — {msg}", file=sys.stderr)
         return 1
 
-    display_name = user.get("displayName") or args.email
     if not rows:
-        print(f"{display_name} is not a member of any group.")
+        print(f"{args.email} is not a member of any group.")
         return 0
 
-    name_width = max(len(r["displayName"] or "") for r in rows) + 2
-    print(f"\nGroups {display_name} is a member of ({len(rows)}):\n")
-    print(f"{'GROUP':<{name_width}}")
-    print("-" * name_width)
+    print(f"\nGroups {args.email} is a member of ({len(rows)}):\n")
     for r in rows:
-        print(f"{(r['displayName'] or '(unnamed)'):<{name_width}}")
+        gname = r["displayName"] or "(unnamed)"
+        print(f"  {gname}  [{args.email}]")
     print()
     return 0
 
@@ -440,7 +493,7 @@ def cmd_add(service: GroupService, args) -> int:
         return 1
 
     if group["id"] in service.get_user_group_ids(user["id"]):
-        print(f"{user.get('displayName') or args.email} is already a member of '{group['displayName']}' — nothing to do.")
+        print(f"{args.email} is already a member of '{group['displayName']}' — nothing to do.")
         return 0
 
     try:
@@ -450,8 +503,13 @@ def cmd_add(service: GroupService, args) -> int:
         log.error("Failed to add %s to '%s': %s", args.email, args.group, msg)
         print(f"Error: could not add {args.email} to '{args.group}' — {msg}", file=sys.stderr)
         return 1
+    except RuntimeError as exc:
+        log.error("Membership change not confirmed for %s in '%s': %s", args.email, args.group, exc)
+        print(f"Warning: {args.email} was added to '{group['displayName']}' but the change is still propagating. "
+              "Run the list command again in a few seconds to confirm.", file=sys.stderr)
+        return 1
 
-    print(f"Added {user.get('displayName') or args.email} to '{group['displayName']}'.")
+    print(f"Added {args.email} to '{group['displayName']}'.")
     return 0
 
 
@@ -470,7 +528,7 @@ def cmd_remove(service: GroupService, args) -> int:
         return 1
 
     if group["id"] not in service.get_user_group_ids(user["id"]):
-        print(f"{user.get('displayName') or args.email} is not currently a member of '{group['displayName']}' — nothing to do.")
+        print(f"{args.email} is not currently a member of '{group['displayName']}' — nothing to do.")
         return 0
 
     try:
@@ -480,8 +538,13 @@ def cmd_remove(service: GroupService, args) -> int:
         log.error("Failed to remove %s from '%s': %s", args.email, args.group, msg)
         print(f"Error: could not remove {args.email} from '{args.group}' — {msg}", file=sys.stderr)
         return 1
+    except RuntimeError as exc:
+        log.error("Membership change not confirmed for %s in '%s': %s", args.email, args.group, exc)
+        print(f"Warning: {args.email} was removed from '{group['displayName']}' but the change is still propagating. "
+              "Run the list command again in a few seconds to confirm.", file=sys.stderr)
+        return 1
 
-    print(f"Removed {user.get('displayName') or args.email} from '{group['displayName']}'. "
+    print(f"Removed {args.email} from '{group['displayName']}'. "
           f"(Membership only — the group itself was not deleted.)")
     return 0
 
